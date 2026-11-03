@@ -213,12 +213,19 @@ svg.i { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor; stroke-
 .md strong { color: var(--brand-strong); }
 .md mark { background: color-mix(in srgb, var(--accent) 18%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
 
-.suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-.suggest button {
-  border: 1px solid var(--brand-border); background: var(--brand-weak); color: var(--brand-strong);
-  border-radius: 999px; padding: 4px 12px; font-size: .88rem; line-height: 1.5;
+/* AI 延伸搜尋的過程說明 */
+.trace { margin: 0 0 10px; font-size: .85rem; color: var(--muted); line-height: 1.6; }
+
+/* 延伸提問 */
+.followups { margin-top: 14px; }
+.followups h4 { margin: 0 0 4px; font-size: .92rem; }
+.followups button {
+  display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
+  border: 0; background: transparent; padding: 6px 8px; border-radius: 8px; line-height: 1.5;
 }
-.suggest button:hover { background: var(--brand); color: var(--on-brand); }
+.followups button span { color: var(--muted); flex: none; }
+.followups button:hover { background: var(--brand-weak); color: var(--brand-strong); }
+.actions .ai-btn { color: var(--brand-strong); font-weight: 600; }
 
 .typing { display: inline-flex; gap: 4px; padding: 8px 0; }
 .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); opacity: .35; animation: blink 1.2s infinite; }

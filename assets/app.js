@@ -7,6 +7,7 @@ const STORE_KEY = 'ykvs-ask:conversations';
 const SETTINGS_KEY = 'ykvs-ask:settings';
 const MAX_CONVERSATIONS = 50;
 const MAX_HISTORY_MESSAGES = 10; // AI 模式送出的上下文訊息數上限
+const CONFIDENT_SCORE = 20; // 檢索分數低於這個值，視為「找不到明確結果」而改用 AI 延伸搜尋
 const API = (CFG.apiUrl || '').replace(/\/+$/, '');
 
 const ICONS = {
@@ -143,9 +144,14 @@ async function loadKnowledge() {
   renderAbout();
 }
 
-function snapshot(r) {
-  const c = r.chunk;
-  return { docTitle: c.docTitle, heading: c.heading, source: c.source, text: c.text };
+function snapshot(c) {
+  return { docTitle: c.docTitle, heading: c.heading, source: c.source, origin: c.origin, text: c.text };
+}
+
+/** 檢索結果是否夠明確：分數夠高；分數只是勉強及格時，問題裡的詞也要有一定比例出現在段落中。 */
+function confident(question, results) {
+  if (!results.length || results[0].score < CONFIDENT_SCORE) return false;
+  return results[0].score >= CONFIDENT_SCORE * 1.5 || kb.index.coverage(question, results[0].chunk) >= 0.3;
 }
 
 // ---------- 對話 ----------
@@ -159,7 +165,8 @@ function ensureConversation(title) {
   return current;
 }
 
-async function ask(question) {
+/** question 是顯示在對話中的問題；query 是實際拿去檢索的字串（延伸提問會帶上文件名稱，找得更準）。 */
+async function ask(question, query) {
   question = question.trim();
   if (!question || busy) return;
   busy = true;
@@ -169,15 +176,21 @@ async function ask(question) {
 
   const conv = ensureConversation(question);
   conv.messages.push({ role: 'user', text: question });
-  const msg = { role: 'assistant', kind: 'answer', text: '', pending: true, question };
+  const msg = { role: 'assistant', kind: 'answer', text: '', pending: true, question, query: query || question };
   conv.messages.push(msg);
   render();
   scrollToBottom(true);
 
   await kbReady;
-  if (API) await answerWithAI(conv, msg);
-  else answerWithSearch(msg);
+  const results = kb.index ? kb.index.search(msg.query, 3) : [];
+  // 有 AI 後端時：關鍵字找不到或結果不明確，才交給 AI 延伸搜尋（aiMode 'always' 則每題都用 AI）
+  if (API && (CFG.aiMode === 'always' || !confident(question, results))) await answerWithAI(conv, msg);
+  else answerWithSearch(msg, results);
 
+  finish(msg);
+}
+
+function finish(msg) {
   msg.pending = false;
   busy = false;
   save();
@@ -185,22 +198,38 @@ async function ask(question) {
   updateSend();
 }
 
-function answerWithSearch(msg) {
+/** 已經是檢索結果的回答，改用 AI 延伸搜尋重新回答。 */
+async function retryWithAI(msg) {
+  if (busy) return;
+  busy = true;
+  for (const k of ['text', 'sources', 'terms', 'followups', 'suggest', 'notice', 'trace', 'failed', 'feedback', 'comment']) delete msg[k];
+  msg.text = '';
+  msg.pending = true;
+  render();
+  await answerWithAI(current, msg);
+  finish(msg);
+}
+
+function answerWithSearch(msg, results) {
   msg.mode = 'search';
   if (!kb.index) { msg.text = kb.error; return; }
-  const results = kb.index.search(msg.question, 3);
-  msg.sources = results.map(snapshot);
+  msg.sources = results.map(r => snapshot(r.chunk));
   msg.terms = kb.index.highlightTerms(msg.question);
   if (!results.length) {
-    msg.text = `目前的資料裡找不到相關內容。可以換個說法再問一次，或聯絡學校總機 ${CFG.schoolPhone}、查看[學校網站](${CFG.schoolUrl})。\n\n也可以試試這些問題：`;
-    msg.suggest = CFG.cards.filter(c => c.prompts).map(c => c.prompts[0]);
+    msg.text = `目前的資料裡找不到相關內容。可以換個說法再問一次，或聯絡學校總機 ${CFG.schoolPhone}、查看[學校網站](${CFG.schoolUrl})。`;
+    msg.followups = CFG.cards.filter(c => c.prompts).map(c => ({ label: c.prompts[0], query: c.prompts[0] }));
     return;
   }
   const top = results[0].chunk;
-  const key = kb.index.keyLines(msg.question, top);
+  const key = kb.index.keyLines(msg.query || msg.question, top);
   msg.text = key.length
     ? `**重點**（出自〈${top.docTitle}・${top.heading}〉）\n${key.map(l => '- ' + l).join('\n')}`
     : '以下是學校資料中最相關的內容：';
+  // 延伸提問：其他相關段落，不夠再補同一份文件的前後段
+  const seen = new Set([top]);
+  const pool = [...results.slice(1).map(r => r.chunk), ...kb.index.neighbors(top)];
+  msg.followups = pool.filter(c => !seen.has(c) && seen.add(c)).slice(0, 3)
+    .map(c => ({ label: c.heading, query: `${c.docTitle} ${c.heading}` }));
 }
 
 function historyForAI(conv) {
@@ -230,23 +259,54 @@ async function answerWithAI(conv, msg) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `HTTP ${res.status}`);
     }
-    const stop = await readStream(res, text => { msg.text += text; updateStreaming(msg); });
+    let raw = '';
+    const stop = await readStream(res, {
+      // AI 先回報它怎麼理解問題、延伸了哪些關鍵詞、找到哪些段落
+      meta(m) {
+        msg.trace = { intent: m.intent || '', keywords: m.keywords || [] };
+        msg.sources = (m.sections || []).map(snapshot);
+        updateStreaming(msg);
+      },
+      text(t) {
+        raw += t;
+        Object.assign(msg, splitFollowups(raw));
+        updateStreaming(msg);
+      },
+    });
     if (stop === 'refusal') {
       msg.text = '這個問題我沒辦法回答。請換個方式詢問，或直接聯絡學校相關處室。';
+      msg.followups = [];
     } else if (stop === 'max_tokens') {
       msg.text += '\n\n（回答過長，已截斷。）';
     }
-    if (kb.index) msg.sources = kb.index.search(msg.question, 3).map(snapshot);
   } catch (err) {
     console.error(err);
+    delete msg.trace;
     msg.notice = `AI 服務暫時無法使用（${err.message}），先提供學校資料查詢結果。`;
-    answerWithSearch(msg);
+    answerWithSearch(msg, kb.index ? kb.index.search(msg.query || msg.question, 3) : []);
     msg.failed = true;
   }
 }
 
-/** 讀取 Worker 回傳的 SSE；每段文字呼叫 onText，回傳結束原因（stop_reason）。 */
-async function readStream(res, onText) {
+const FOLLOWUP_MARK = '【延伸提問】';
+
+/** AI 回答最後一行是「【延伸提問】問題一｜問題二｜問題三」：拆成正文與延伸提問；串流中先藏起不完整的標記。 */
+function splitFollowups(raw) {
+  const at = raw.indexOf(FOLLOWUP_MARK);
+  if (at >= 0) {
+    const followups = raw.slice(at + FOLLOWUP_MARK.length).split(/[｜|\n]/)
+      .map(s => s.replace(/^\s*[-*\d.、]+\s*/, '').trim()).filter(Boolean).slice(0, 3)
+      .map(q => ({ label: q, query: q }));
+    return { text: raw.slice(0, at).trimEnd(), followups };
+  }
+  for (let n = FOLLOWUP_MARK.length - 1; n > 0; n--) {
+    if (raw.endsWith(FOLLOWUP_MARK.slice(0, n))) return { text: raw.slice(0, -n), followups: [] };
+  }
+  return { text: raw, followups: [] };
+}
+
+/** 讀取 Worker 回傳的 SSE（{meta}、{t: 文字}、{done, stop}），回傳結束原因（stop_reason）。 */
+async function readStream(res, on) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -263,7 +323,8 @@ async function readStream(res, onText) {
         if (!line.startsWith('data:')) continue;
         const data = JSON.parse(line.slice(5));
         if (data.error) throw new Error(data.error);
-        if (data.t) onText(data.t);
+        if (data.meta) on.meta(data.meta);
+        if (data.t) on.text(data.t);
         if (data.done) stop = data.stop;
       }
     }
@@ -367,13 +428,18 @@ function messageEl(msg, i) {
 }
 
 function answerHtml(msg) {
-  if (msg.pending && !msg.text) return '<div class="typing" aria-label="回答中"><i></i><i></i><i></i></div>';
-  let html = msg.notice ? `<div class="notice">${esc(msg.notice)}</div>` : '';
+  let html = '';
+  if (msg.mode === 'ai') html += traceHtml(msg);
+  if (msg.pending && !msg.text) return html + '<div class="typing" aria-label="回答中"><i></i><i></i><i></i></div>';
+  if (msg.notice) html += `<div class="notice">${esc(msg.notice)}</div>`;
   html += `<div class="md">${renderMarkdown(msg.text, msg.terms)}</div>`;
   if (msg.pending) return html;
 
-  if (msg.suggest) {
-    html += '<div class="suggest">' + msg.suggest.map(p => `<button data-prompt="${esc(p)}">${esc(p)}</button>`).join('') + '</div>';
+  // 舊版紀錄用 suggest 存建議問題
+  const followups = msg.followups || (msg.suggest || []).map(p => ({ label: p, query: p }));
+  if (followups.length) {
+    html += '<div class="followups"><h4>延伸提問</h4>' + followups.map(f =>
+      `<button data-prompt="${esc(f.label)}" data-query="${esc(f.query)}"><span aria-hidden="true">↵</span>${esc(f.label)}</button>`).join('') + '</div>';
   }
 
   if (msg.sources && msg.sources.length) {
@@ -383,13 +449,16 @@ function answerHtml(msg) {
       return `<details class="src${open ? ' src-primary' : ''}"${open ? ' open' : ''}>
         <summary><span class="src-tag">【${open ? '原文' : '參考'}】</span>${esc(s.docTitle)}・${esc(s.heading)}</summary>
         <div class="md">${renderMarkdown(s.text, msg.terms)}</div>
-        ${s.source ? `<a class="src-link" href="${esc(s.source)}" target="_blank" rel="noopener">查看學校網站原始頁面 ↗</a>` : ''}
+        ${sourceLine(s)}
       </details>`;
     }).join('') + '</div>';
   }
 
   if (msg.mode === 'quiz') return html;
   html += '<div class="actions">';
+  if (API && msg.mode === 'search' && !msg.failed && kb.index) {
+    html += `<button class="text-btn ai-btn" data-act="ai">✨ 用 AI 延伸搜尋</button>`;
+  }
   if (API) {
     html += `<button class="icon-btn" data-act="up" aria-label="有幫助" title="有幫助" aria-pressed="${msg.feedback === 'up'}">${icon('thumb')}</button>
       <button class="icon-btn down" data-act="down" aria-label="沒有幫助" title="沒有幫助" aria-pressed="${msg.feedback === 'down'}">${icon('thumb')}</button>
@@ -398,6 +467,23 @@ function answerHtml(msg) {
   html += `<button class="icon-btn" data-act="copy" aria-label="複製回答" title="複製回答">${icon('copy')}</button>`;
   if (msg.feedback || msg.comment) html += '<span class="thanks">謝謝您的回饋！</span>';
   return html + '</div>';
+}
+
+/** AI 延伸搜尋的過程：怎麼理解問題、延伸了哪些關鍵詞。 */
+function traceHtml(msg) {
+  if (!msg.trace) return msg.pending ? '<p class="trace">正在理解你的問題，並延伸搜尋學校資料…</p>' : '';
+  const { intent, keywords } = msg.trace;
+  let s = intent ? `我理解你想問：${esc(intent)}` : '';
+  if (keywords.length) s += `${s ? '<br>' : ''}延伸搜尋：${keywords.map(esc).join('、')}`;
+  return s ? `<p class="trace">${s}</p>` : '';
+}
+
+/** 參考資料的出處：學校網站連結，或紙本／PDF 文件名稱。 */
+function sourceLine(s) {
+  if (/^https?:\/\//.test(s.source || '')) {
+    return `<a class="src-link" href="${esc(s.source)}" target="_blank" rel="noopener">查看學校網站原始頁面 ↗</a>`;
+  }
+  return s.origin ? `<p class="src-link muted">出處：${esc(s.origin)}</p>` : '';
 }
 
 function quizHtml(msg) {
@@ -488,10 +574,10 @@ function renderDisclaimer() {
 
 function renderAbout() {
   $('#aboutSources').innerHTML = kb.docs.map(d =>
-    `<li>${d.source ? `<a href="${esc(d.source)}" target="_blank" rel="noopener">${esc(d.title)}</a>` : esc(d.title)}${d.updated ? `<span class="muted">（整理日期 ${esc(d.updated)}）</span>` : ''}</li>`).join('')
+    `<li>${/^https?:\/\//.test(d.source) ? `<a href="${esc(d.source)}" target="_blank" rel="noopener">${esc(d.title)}</a>` : esc(d.title)}${d.origin ? `<span class="muted">（${esc(d.origin)}）</span>` : ''}${d.updated ? `<span class="muted">（整理日期 ${esc(d.updated)}）</span>` : ''}</li>`).join('')
     || '<li class="muted">知識庫尚未載入</li>';
   $('#aboutMode').textContent = API
-    ? '本系統的回答由 AI（Anthropic 公司的 Claude 模型）依上述資料生成，可能有疏漏或錯誤，僅供參考；正式內容請以學校公告為準。'
+    ? '本系統先用關鍵字從上述資料中找出相關段落；找不到明確結果時，由 AI（Anthropic 公司的 Claude 模型）理解並延伸你的問題、挑選相關段落後彙整回答。AI 回答可能有疏漏或錯誤，僅供參考；正式內容請以學校公告為準。'
     : '本系統目前為「檢索模式」：回答是從上述資料中找出最相關的段落直接呈現，不經 AI 改寫；資料可能未即時更新，正式內容請以學校公告為準。';
   $('#aboutAiPrivacy').textContent = API
     ? '提問時，您輸入的問題會送到學校的 AI 伺服器並交由 Claude 模型產生回答；按 👍／👎 或「補充意見」時，該則問答會傳給系統管理者作為改善參考。請勿輸入身分證字號、密碼、電話等個人資料。'
@@ -563,7 +649,7 @@ document.addEventListener('click', e => {
     else setPanel(activeCard === t.dataset.card ? null : t.dataset.card);
     return;
   }
-  if (t.dataset.prompt) { ask(t.dataset.prompt); return; }
+  if (t.dataset.prompt) { ask(t.dataset.prompt, t.dataset.query); return; }
   if (t.dataset.conv) {
     current = conversations.find(c => c.id === t.dataset.conv) || null;
     setPanel(null);
@@ -586,6 +672,7 @@ document.addEventListener('click', e => {
         save(); render();
         break;
       case 'comment': openComment(msg); break;
+      case 'ai': retryWithAI(msg); break;
       case 'copy':
         navigator.clipboard?.writeText(msg.text).then(() => {
           t.innerHTML = icon('check');
@@ -633,7 +720,7 @@ $('#appName').textContent = CFG.name;
 $('#appBadge').textContent = CFG.badge || '';
 $('#appBadge').hidden = !CFG.badge;
 $('#appTagline').textContent = CFG.tagline;
-$('#modeLabel').textContent = `${API ? 'AI 模式' : '檢索模式'} · 對話紀錄僅存於此裝置`;
+$('#modeLabel').textContent = `${API ? '關鍵字＋AI 延伸搜尋' : '檢索模式'} · 對話紀錄僅存於此裝置`;
 if (CFG.reportUrl) {
   $('#reportLink').href = CFG.reportUrl;
   $('#reportLink').hidden = false;

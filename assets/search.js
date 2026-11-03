@@ -22,7 +22,8 @@ export function parseDoc(file, raw) {
 
   const h1 = text.match(/^#\s+(.+)$/m);
   const title = meta.title || (h1 ? h1[1].trim() : file.replace(/\.md$/, ''));
-  const doc = { file, title, source: meta.source || '', updated: meta.updated || '', chunks: [] };
+  // source：學校網站網址；origin：紙本或 PDF 文件的出處說明（例如「115親職手冊 p.11–28」）
+  const doc = { file, title, source: meta.source || '', origin: meta.origin || '', updated: meta.updated || '', chunks: [] };
 
   // 依 ## 切段；# 標題之後、第一個 ## 之前的文字當作「概述」
   const parts = text.split(/^##\s+/m);
@@ -46,6 +47,7 @@ function pushChunk(doc, heading, body) {
       docTitle: doc.title,
       heading,
       source: doc.source,
+      origin: doc.origin,
       text: b,
     });
   });
@@ -164,6 +166,26 @@ export class SearchIndex {
     }
     return [...picked].sort((a, b) => a - b)
       .map(i => lines[i].replace(/^([-*•]|\d+[.)、])\s*/, ''));
+  }
+
+  /** 問題本身的詞（不含同義詞）有多少比例出現在這個段落，用來判斷檢索結果夠不夠明確。 */
+  coverage(query, chunk) {
+    const terms = [...new Set(tokenize(query))].filter(t => t.length >= 2 || /^[a-z0-9]+$/.test(t));
+    if (!terms.length) return 0;
+    const text = `${chunk.docTitle} ${chunk.heading} ${chunk.text}`.toLowerCase();
+    return terms.filter(t => text.includes(t)).length / terms.length;
+  }
+
+  /** 與某段落相關的其他段落：同一份文件的前後段，用來產生檢索模式的「延伸提問」。 */
+  neighbors(chunk, n = 3) {
+    const i = this.chunks.indexOf(chunk);
+    const out = [];
+    for (const j of [i + 1, i - 1, i + 2, i - 2, i + 3]) {
+      const c = this.chunks[j];
+      if (c && c.docTitle === chunk.docTitle && c.heading !== '概述' && c.heading !== chunk.heading) out.push(c);
+      if (out.length >= n) break;
+    }
+    return out;
   }
 
   /** 問題中可以在資料裡標示出來的關鍵詞（中文雙字詞以上）。 */
