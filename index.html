@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-Hant-TW" data-theme="auto" data-font="m">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>問問鶯歌工商</title>
+  <meta name="description" content="新北市立鶯歌高級工商職業學校校園查詢系統：選課、學分、畢業條件、處室業務與分機，校園大小事都可以問。">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="config.js"></script>
+  <script type="module" src="assets/app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar" aria-label="對話紀錄">
+      <div class="sb-head">
+        <span class="sb-title">對話紀錄</span>
+        <button class="icon-btn" data-action="close-sidebar" aria-label="關閉側欄" data-icon="x"></button>
+      </div>
+      <button class="sb-new" data-action="new-chat"><span data-icon="pen"></span>新對話</button>
+      <ul class="history" id="historyList"></ul>
+      <div class="sb-foot">
+        <p class="sb-mode" id="modeLabel"></p>
+        <button class="sb-link" data-action="clear-history">清除紀錄</button>
+        <button class="sb-link" data-action="open-help">使用說明</button>
+        <button class="sb-link" data-action="open-about">關於・聲明</button>
+        <a class="sb-link" id="reportLink" target="_blank" rel="noopener" hidden>回報問題 / 意見回饋</a>
+      </div>
+    </aside>
+    <div class="scrim" data-action="close-sidebar"></div>
+
+    <main class="main" id="main">
+      <header class="topbar">
+        <button class="icon-btn" data-action="toggle-sidebar" aria-label="對話紀錄" title="對話紀錄" data-icon="menu"></button>
+        <button class="icon-btn" data-action="new-chat" aria-label="新對話" title="新對話" data-icon="pen"></button>
+        <button class="icon-btn" data-action="open-settings" aria-label="顯示設定" title="顯示設定" data-icon="type"></button>
+        <span class="topbar-title" id="topbarTitle"></span>
+      </header>
+
+      <section class="hero" id="hero">
+        <img class="logo" src="assets/logo.svg" alt="" width="64" height="64">
+        <div>
+          <h1><span id="appName"></span><span class="badge" id="appBadge"></span></h1>
+          <p class="tagline" id="appTagline"></p>
+        </div>
+      </section>
+
+      <section class="chat" id="chat" aria-live="polite">
+        <div class="messages" id="messages"></div>
+      </section>
+
+      <div class="dock">
+        <form class="composer" id="composer">
+          <label class="sr-only" for="input">輸入您的問題</label>
+          <textarea id="input" rows="2" placeholder="輸入您的問題…（例如：畢業需要幾學分？）" maxlength="500"></textarea>
+          <div class="composer-actions">
+            <button type="button" class="icon-btn mic" id="micBtn" aria-label="語音輸入" title="語音輸入" data-icon="mic" hidden></button>
+            <button type="submit" class="send" id="sendBtn" disabled>送出</button>
+          </div>
+        </form>
+        <div class="starter" id="starter">
+          <p class="hint">有任何問題都可以直接輸入，或從這些開始</p>
+          <div class="cards" id="cards"></div>
+          <div class="panel" id="panel" hidden></div>
+        </div>
+        <p class="disclaimer" id="disclaimer"></p>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="dlgSettings" class="dlg dlg-sm">
+    <form method="dialog">
+      <h2>顯示設定</h2>
+      <fieldset>
+        <legend>字體大小</legend>
+        <div class="seg" data-setting="font">
+          <button type="button" data-value="s">小</button>
+          <button type="button" data-value="m">中</button>
+          <button type="button" data-value="l">大</button>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>外觀</legend>
+        <div class="seg" data-setting="theme">
+          <button type="button" data-value="auto">跟隨系統</button>
+          <button type="button" data-value="light">淺色</button>
+          <button type="button" data-value="dark">深色</button>
+        </div>
+      </fieldset>
+      <div class="dlg-actions"><button class="btn-primary">完成</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="dlgHelp" class="dlg">
+    <form method="dialog">
+      <h2>使用說明</h2>
+      <ul class="help-list">
+        <li><span>💬</span><div><b>自由提問</b><p>直接輸入想問的事，例如「畢業需要幾學分？」、「在學證明找誰辦？」。手機鍵盤或輸入框旁若有 🎤，也可以用語音輸入。</p></div></li>
+        <li><span>🧭</span><div><b>從卡片開始</b><p>不知道要問什麼，可以點下方卡片：課業學分、校園生活、找誰辦事，會列出常見問題；「換我問你」是校園小測驗。</p></div></li>
+        <li><span>✨</span><div><b>新對話</b><p>換一個主題時，按左上角的「新對話」。</p></div></li>
+        <li><span>📚</span><div><b>對話紀錄</b><p>對話會自動保存在這台裝置上。點左上角選單可以回顧過去的對話；使用公用電腦時，離開前請按「清除紀錄」。</p></div></li>
+        <li><span>🔠</span><div><b>顯示設定</b><p>點左上角「Aa」可以調整字體大小與深色模式。</p></div></li>
+        <li><span>👍</span><div><b>回饋意見</b><p>每則回答下方都有 👍 / 👎，也可以「補充意見」，幫助我們把資料補得更完整。</p></div></li>
+        <li><span>🔒</span><div><b>保護個資</b><p>請不要輸入身分證字號、密碼、電話或其他個人資料。</p></div></li>
+      </ul>
+      <div class="dlg-actions"><button class="btn-primary">我知道了</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="dlgAbout" class="dlg">
+    <form method="dialog">
+      <h2>關於・聲明</h2>
+      <h3>資料來源</h3>
+      <p>本系統的回答依據下列資料，整理自學校網站公開資訊與各處室提供的內容：</p>
+      <ul class="about-sources" id="aboutSources"></ul>
+      <h3>回答說明</h3>
+      <p id="aboutMode"></p>
+      <h3>隱私</h3>
+      <p>對話紀錄只保存在您這台裝置的瀏覽器中，直到您按「清除紀錄」才會刪除；使用公用電腦時，離開前請記得清除。<span id="aboutAiPrivacy"></span></p>
+      <p class="muted" id="aboutVersion"></p>
+      <div class="dlg-actions"><button class="btn-primary">我知道了</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="dlgComment" class="dlg dlg-sm">
+    <form method="dialog" id="commentForm">
+      <h2>補充意見</h2>
+      <p class="muted">這則回答哪裡不正確、或缺少什麼資料？您的意見會幫助管理者改善知識庫。</p>
+      <textarea id="commentText" rows="4" maxlength="500" placeholder="例如：分機已經改成 8xx 了"></textarea>
+      <div class="dlg-actions">
+        <button value="cancel" class="btn-ghost">取消</button>
+        <button value="ok" class="btn-primary">送出意見</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

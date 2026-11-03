@@ -1,0 +1,166 @@
+# 問問鶯歌工商 — 校內查詢系統
+
+新北市立鶯歌高級工商職業學校的對話式校園查詢系統。參考「問問聖嚴師父」（ask.shengyen.org）的做法：一個簡潔的提問框、四張引導卡片、有出處的回答、對話紀錄、顯示設定與回饋機制，讓學生、家長、教職員用自然的問句查到學校資訊。
+
+## 設計概念（對照問問聖嚴師父）
+
+| 問問聖嚴師父 | 問問鶯歌工商 |
+|---|---|
+| 語料：《法鼓全集》、法鼓山新聞與活動 | 知識庫：學校網站公開資料、各處室提供的內容（`kb/*.md`） |
+| AI 依語料回答，並附引用片段 | AI 依知識庫回答，並附「參考資料」卡片與原始網頁連結 |
+| 四張卡片：時事禪心、法鼓活動、師父聲影、換我問你 | 四張卡片：課業學分、校園生活、找誰辦事、換我問你（校園小測驗） |
+| 對話紀錄（訪客模式存於本機） | 對話紀錄存於本機瀏覽器，可一鍵清除 |
+| 顯示設定：字體大小、深色模式 | 同左 |
+| 👍 / 👎、補充意見、回報問題 | 同左（回饋存到 Worker 的 KV，管理者可查看） |
+| 語音輸入 | 同左（Chrome、Edge、Safari 支援） |
+| 「回應由 AI 生成，可能有疏漏」聲明 | 同左，並在「關於・聲明」列出資料來源與整理日期 |
+
+## 兩種模式
+
+- **檢索模式**（預設、免費）：不使用 AI，直接從知識庫找出最相關的段落呈現。只要把檔案放上任何網站就能用。
+- **AI 模式**：加上一個 Cloudflare Worker 後端，由 Anthropic 的 Claude 模型讀完整個知識庫後，用口語整理出答案。答案只根據知識庫，查不到會直說並建議洽詢的處室。
+
+建議先用檢索模式讓各處室核對資料，資料確認後再開啟 AI 模式。
+
+## 資料夾結構
+
+```
+ykvs-ask/
+├─ index.html          首頁
+├─ config.js           ★ 學校設定（名稱、卡片、建議問題、AI 網址、同義詞）
+├─ kb/                 ★ 知識庫（各處室維護的 Markdown 檔）
+│  ├─ index.json       知識庫檔案清單
+│  └─ 01-school.md …
+├─ data/quiz.json      ★「換我問你」題庫
+├─ assets/             程式、樣式、圖示（一般不需要改）
+├─ worker/worker.js    AI 後端（貼到 Cloudflare Worker）
+├─ tools/serve.ps1     本機預覽用的小伺服器
+└─ 啟動預覽.bat         雙擊即可在本機預覽
+```
+
+標 ★ 的是管理者平常會編輯的檔案。
+
+## 本機預覽
+
+雙擊「啟動預覽.bat」，瀏覽器會打開 http://localhost:8080/ 。關閉黑色視窗即停止。
+
+（直接雙擊 index.html 不行：瀏覽器會擋住讀取知識庫檔案。）
+
+## 部署：檢索模式
+
+`config.js` 的 `apiUrl` 保持空白（預設就是空白），就是檢索模式。不需要 AI 帳號、沒有任何費用，也不會把使用者的問題送到外部。
+
+檢索模式的回答方式：先列出最相關的「重點」句子（問題中的關鍵詞會用底色標示），下方附上該段「原文」與學校網站原始頁面連結；找不到時會建議幾個可以問的問題。
+
+把整個 `ykvs-ask` 資料夾放上任一個靜態網站即可（`worker/`、`tools/`、`啟動預覽.bat` 不需要上傳，上傳了也沒關係）。三種做法擇一：
+
+**做法 A：學校網頁伺服器**（網址最正式）
+請資訊組把資料夾放到學校網站的一個子目錄，例如 `https://www.ykvs.ntpc.edu.tw/ask/`。伺服器需能提供 `.md` 與 `.json` 檔案（一般都可以；若知識庫載入失敗，請資訊組為 `.md` 加上 `text/markdown` 類型）。
+
+**做法 B：Cloudflare Pages**（免費、拖曳上傳、最快）
+1. 註冊並登入 https://dash.cloudflare.com/
+2. 左側「Workers & Pages」→「Create」→「Pages」→「Upload assets」
+3. 取一個專案名稱（例如 `ykvs-ask`），把 `ykvs-ask` 資料夾整個拖進去 →「Deploy」
+4. 完成後會得到 `https://ykvs-ask.pages.dev` 這類網址。之後更新資料，同樣在該專案「Create new deployment」重新拖曳上傳。
+
+**做法 C：GitHub Pages**（免費，適合要保留修改紀錄）
+
+1. 登入 https://github.com/ →右上角「＋」→「New repository」，名稱填 `ykvs-ask`，選 **Public**（免費帳號的 Pages 需要公開儲存庫）→「Create repository」。
+2. 在新儲存庫頁面點「uploading an existing file」，把 `ykvs-ask` 資料夾**裡面的所有檔案與資料夾**拖進去 →「Commit changes」。
+3. **確認根目錄有 `.nojekyll` 這個空檔案**（網頁上傳有時會略過開頭是「.」的檔案）。沒有的話：「Add file」→「Create new file」，檔名輸入 `.nojekyll`，內容留空，Commit。
+   少了它，GitHub 會把 `kb/` 裡的 `.md` 轉成網頁，知識庫就會載入失敗。
+4. 「Settings」→「Pages」→ Source 選「Deploy from a branch」，Branch 選 `main`、資料夾 `/ (root)` →「Save」。
+5. 等 1～2 分鐘，網址是 `https://你的帳號.github.io/ykvs-ask/`。
+
+之後更新知識庫：在 GitHub 網頁上打開 `kb/` 裡的檔案，按鉛筆圖示直接編輯，Commit 後約 1 分鐘自動上線；每次修改都會留下紀錄，改錯可以還原。
+
+### 檢索模式收集回饋
+
+檢索模式沒有後端，所以不顯示 👍 / 👎。可以建一份 Google 表單（例如「哪個問題查不到？正確答案是？」），把表單網址填進 `config.js` 的 `reportUrl`，側欄就會出現「回報問題 / 意見回饋」按鈕。定期看表單內容，把查不到的問題補進知識庫或 `synonyms` 同義詞表。
+
+## 部署：開啟 AI 模式
+
+需要兩個帳號：Anthropic（提供 AI）與 Cloudflare（執行後端，免費方案即可）。全部在網頁後台操作，不需安裝任何軟體。
+
+1. **取得 Claude API 金鑰**：到 https://console.anthropic.com/ 註冊、儲值，在 API Keys 建立金鑰。建議在 Limits 設定每月用量上限。
+2. **建立 Worker**：Cloudflare 後台 → Workers & Pages → Create → 建立 Worker → 「編輯程式碼」，把 `worker/worker.js` 的內容整個貼上 → Deploy。
+3. **設定變數**（Worker → Settings → Variables and Secrets）：
+
+   | 名稱 | 類型 | 內容 |
+   |---|---|---|
+   | `ANTHROPIC_API_KEY` | Secret | 第 1 步的金鑰 |
+   | `KB_BASE_URL` | Text | 前端網站網址，例如 `https://www.ykvs.ntpc.edu.tw/ask/` |
+   | `ALLOWED_ORIGINS` | Text | 前端網站的網域，例如 `https://www.ykvs.ntpc.edu.tw`（只有這個網站能呼叫 AI） |
+   | `MODEL` | Text | 選填，預設 `claude-opus-5-5` |
+   | `EFFORT` | Text | 選填，預設 `low` |
+   | `RATE_LIMIT_PER_MIN` | Text | 選填，每個 IP 每分鐘提問上限，預設 10 |
+
+4. **（選用）保存回饋**：Workers → KV 建立一個命名空間，在 Worker 的 Bindings 綁定，變數名稱填 `FEEDBACK`。之後可在 KV 後台看到使用者按的 👍 / 👎 與補充意見。
+5. **測試**：瀏覽器開 `https://你的worker網址/api/health`，看到 `"keyConfigured":true,"kbConfigured":true` 即完成。
+6. **連接前端**：編輯 `config.js`，把 `apiUrl` 改成 Worker 網址，重新上傳。側欄會顯示「AI 模式」。
+7. **（建議）防濫用**：Cloudflare → Security → WAF → Rate limiting rules，對 `/api/chat` 設定每 IP 每分鐘上限，比程式內建的限流更可靠。
+
+### 費用估算
+
+知識庫目前約 9,000 字（約 1 萬 tokens）。Worker 對知識庫使用 prompt caching，連續提問時知識庫以快取價格計費。以預設的 Claude Opus 5.5（輸入 US$4、輸出 US$20／百萬 tokens，快取讀取 US$0.20）估算，每題約 US$0.01～0.02，每月 1,000 題約 US$15～20。
+
+若預算有限，可把 `MODEL` 改成 `claude-haiku-5-5`（價格約 1/40，回答品質較簡略），程式會自動處理差異。知識庫越大，每題費用越高；請在 Anthropic 後台設定用量上限。
+
+## 維護知識庫
+
+每個處室一個 Markdown 檔，用記事本或任何文字編輯器即可編輯（存檔請用 UTF-8）。格式：
+
+```markdown
+---
+title: 學務處與教官室
+source: https://www.ykvs.ntpc.edu.tw/p/426-1000-111.php
+updated: 2026-11-03
+---
+
+# 學務處與教官室
+
+## 生活輔導組（生輔組，組長分機 842）
+
+- 學生請假、缺席、遲到的登記與處理
+- …
+
+<!-- 這是給管理者看的註解，系統不會讀取，也不會顯示給使用者 -->
+```
+
+- 開頭 `---` 之間是檔案資訊：`title` 標題、`source` 原始網頁、`updated` 整理日期（會顯示在「關於・聲明」）。
+- 每個 `## 標題` 是一個段落，檢索模式會整段呈現，所以標題要清楚（例如「註冊組（組長分機 811）」），一段講一件事。
+- 新增檔案後，要把檔名加進 `kb/index.json`。檔名請用英文與數字。
+- 上傳後，前端立即生效；AI 模式最多 5 分鐘內生效。
+- 只放可以公開的資訊；不要放個人電話、身分證字號等個資。現有資料只列職稱與分機，不列人名，避免人事異動後過時。
+
+### 待補資料（上線前建議完成）
+
+- `03-student-affairs.md`「請假與獎懲」：請學務處依學生手冊補上請假手續、假別、期限、證明文件與獎懲標準。
+- `06-calendar.md`：正式行事曆是 PDF，系統讀不到。請教務處整理各週重要日程貼上（檔案內有格式說明）。
+- 輔導室、總務處、圖書館、進修部、人事室、會計室的業務與分機（目前尚未建檔）。
+- 各科的詳細介紹、升學進路與證照。
+
+### 題庫
+
+`data/quiz.json` 每題格式如下，`answer` 是正確選項的索引（0 = A、1 = B…）：
+
+```json
+{ "q": "題目", "options": ["A", "B", "C", "D"], "answer": 1, "explain": "解說", "source": "出處標題" }
+```
+
+### 卡片與建議問題
+
+在 `config.js` 的 `cards` 修改四張卡片的名稱、副標與建議問題。`synonyms` 是同義詞表：例如使用者問「被當」時，也會用「重修、補修、學分」去找資料。發現某些問法找不到答案時，加進這裡最快。
+
+## 隱私與安全
+
+- 對話紀錄只存在使用者的瀏覽器（localStorage），伺服器不保存對話。
+- AI 模式下，問題會送到 Worker 再交給 Claude API；API 金鑰只存在 Cloudflare 的 Secret，不會出現在前端。
+- 回饋（👍 / 👎 / 補充意見）會連同該則問答存到 KV，保存 180 天。
+- 介面與「關於・聲明」都提醒使用者不要輸入個人資料。
+- 上線前請與學校資訊組、行政單位確認資料正確性與對外公開的方式；建議先標示「試辦版」（`config.js` 的 `badge`）。
+
+## 未包含的功能
+
+- 登入與跨裝置同步：原站使用帳號登入同步紀錄；本系統目前只存本機。日後可接學校 Google Workspace 帳號登入。
+- 讀取 PDF 附件：學校很多公告是 PDF，需要人工整理成 Markdown 放入知識庫。
