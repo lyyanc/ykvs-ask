@@ -1,4 +1,4 @@
-/* 問問鶯歌工商 — 樣式
+/* 鶯歌工商AI輔助查詢系統 — 樣式
    色調：青瓷綠（主色）＋陶土橘（點綴），呼應鶯歌陶瓷。 */
 
 :root {
@@ -107,7 +107,12 @@ svg.i { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor; stroke-
   display: flex; align-items: center; justify-content: center; gap: 14px;
   padding: 10vh 16px 20px; text-align: left;
 }
-.hero .logo { width: 64px; height: 64px; flex: none; }
+/* 校徽是白底 GIF：淺色主題讓白底融入背景，深色主題放在白色圓角底板上 */
+.hero .logo { width: 76px; height: auto; flex: none; mix-blend-mode: multiply; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hero .logo { mix-blend-mode: normal; background: #fff; border-radius: 16px; padding: 6px; }
+}
+:root[data-theme="dark"] .hero .logo { mix-blend-mode: normal; background: #fff; border-radius: 16px; padding: 6px; }
 .hero h1 { margin: 0; font-size: 1.6rem; line-height: 1.3; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .badge {
   font-size: .7rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;

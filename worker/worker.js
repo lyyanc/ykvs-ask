@@ -1,4 +1,4 @@
-// 問問鶯歌工商 — AI 後端（Cloudflare Worker）
+// 鶯歌工商AI輔助查詢系統 — AI 後端（Cloudflare Worker）
 //
 // 收到問題後，讀取網站上的知識庫（kb/*.md），連同問題交給 Claude 回答，並以串流方式回傳。
 // 單一檔案、不需安裝套件，可直接貼到 Cloudflare 後台的 Worker 編輯器。
@@ -21,7 +21,7 @@ const MAX_MESSAGES = 10;
 const MAX_USER_CHARS = 1000;
 const MAX_ASSISTANT_CHARS = 4000;
 
-const INSTRUCTIONS = `你是「問問鶯歌工商」，新北市立鶯歌高級工商職業學校的校園查詢助理，服務本校學生、家長與教職員。
+const INSTRUCTIONS = `你是「鶯歌工商AI輔助查詢系統」，新北市立鶯歌高級工商職業學校的校園查詢助理，服務本校學生、家長與教職員。
 
 回答原則：
 - 只根據 <knowledge_base> 裡的資料回答。資料沒有寫到的，直接說「目前的資料裡沒有這項資訊」，並建議洽詢可能的承辦處室（附分機）或查看學校網站；不要自行推測日期、規定、金額或人名。

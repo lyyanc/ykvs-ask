@@ -1,4 +1,4 @@
-// 問問鶯歌工商 — 前端主程式
+// 鶯歌工商AI輔助查詢系統 — 前端主程式
 import { parseDoc, SearchIndex } from './search.js';
 
 const CFG = window.APP_CONFIG;
