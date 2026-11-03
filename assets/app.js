@@ -359,7 +359,7 @@ function messageEl(msg, i) {
     return div;
   }
   div.className = 'msg-bot';
-  div.innerHTML = `<img class="avatar" src="assets/logo.svg" alt=""><div class="body"></div>`;
+  div.innerHTML = `<img class="avatar" src="assets/school-logo.gif" alt=""><div class="body"></div>`;
   const body = div.querySelector('.body');
   if (msg.kind === 'quiz') body.innerHTML = quizHtml(msg);
   else body.innerHTML = answerHtml(msg);

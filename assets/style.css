@@ -195,7 +195,11 @@ svg.i { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor; stroke-
   padding: 8px 14px; border-radius: 16px 16px 4px 16px; white-space: pre-wrap; word-break: break-word;
 }
 .msg-bot { align-self: stretch; display: flex; gap: 10px; }
-.msg-bot .avatar { width: 30px; height: 30px; flex: none; margin-top: 2px; }
+.msg-bot .avatar { width: 30px; height: 30px; flex: none; margin-top: 2px; object-fit: contain; mix-blend-mode: multiply; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .msg-bot .avatar { mix-blend-mode: normal; background: #fff; border-radius: 8px; padding: 2px; }
+}
+:root[data-theme="dark"] .msg-bot .avatar { mix-blend-mode: normal; background: #fff; border-radius: 8px; padding: 2px; }
 .msg-bot .body { flex: 1; min-width: 0; }
 .md { word-break: break-word; }
 .md > :first-child { margin-top: 0; }
