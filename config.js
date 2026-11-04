@@ -11,7 +11,7 @@ window.APP_CONFIG = {
 
   // AI 後端（Cloudflare Worker）網址，例如 'https://ykvs-ask.xxx.workers.dev'
   // 留空 = 「檢索模式」：不用 AI，直接從知識庫找出最相關的段落，完全免費。
-  apiUrl: '',
+  apiUrl: 'https://ykvs-ask.lyyanc.workers.dev',
 
   // 有設定 apiUrl 時的 AI 使用方式：
   // 'fallback'：先用關鍵字檢索；找不到或結果不明確時，才由 AI 延伸問題、彙整回答（較省費用，建議）
